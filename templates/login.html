@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="pageTitle">登录 - PicMix</title>
+    <style>
+        body { font-family: Arial, sans-serif; background:#f5f7fb; }
+        .box { width: 360px; max-width: calc(100vw - 32px); margin: 80px auto; padding: 24px; background:white; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.1);}
+        input { width:100%; padding:8px; margin:8px 0; box-sizing:border-box; }
+        .btn { padding:8px 12px; background:#4f46e5; color:white; border:none; border-radius:4px; cursor:pointer; }
+        .langbar { text-align:right; margin-bottom:12px; }
+        .langbar button { margin-left:4px; }
+        a { color:#4f46e5; }
+    </style>
+</head>
+<body>
+<div class="box">
+    <div class="langbar">
+        <button class="btn" type="button" data-lang="zh">中文</button>
+        <button class="btn" type="button" data-lang="en">EN</button>
+        <button class="btn" type="button" data-lang="jp">日本語</button>
+    </div>
+    <h2 data-i18n="login">登录</h2>
+    {% if error %}
+        <div style="color:red">{{ error }}</div>
+    {% endif %}
+    <form method="post">
+        <label data-i18n="email">邮箱</label>
+        <input type="email" name="email" required>
+        <label data-i18n="password">密码</label>
+        <input type="password" name="password" required>
+        <div style="margin-top:12px">
+            <button class="btn" type="submit" data-i18n="login">登录</button>
+            <a href="/register" style="margin-left:12px" data-i18n="register">注册</a>
+        </div>
+    </form>
+</div>
+<script>
+const I18N = {
+    zh: { pageTitle: '登录 - PicMix', login: '登录', email: '邮箱', password: '密码', register: '注册' },
+    en: { pageTitle: 'Login - PicMix', login: 'Login', email: 'Email', password: 'Password', register: 'Register' },
+    jp: { pageTitle: 'ログイン - PicMix', login: 'ログイン', email: 'メール', password: 'パスワード', register: '登録' }
+};
+function setLang(lang) {
+    localStorage.setItem('picmixLang', lang);
+    document.documentElement.lang = lang === 'jp' ? 'ja' : lang === 'en' ? 'en' : 'zh-CN';
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+        const value = (I18N[lang] || I18N.zh)[el.dataset.i18n];
+        if (el.tagName.toLowerCase() === 'title') document.title = value;
+        else el.textContent = value;
+    });
+}
+document.querySelectorAll('[data-lang]').forEach(btn => btn.addEventListener('click', () => setLang(btn.dataset.lang)));
+setLang(localStorage.getItem('picmixLang') || 'zh');
+</script>
+</body>
+</html>

@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="pageTitle">PicMix - 可逆块级图片打乱</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            min-height: 100vh;
+            padding: 20px;
+            font-family: "Segoe UI", Arial, sans-serif;
+            background: linear-gradient(135deg, #475569 0%, #7c3aed 55%, #dc2626 100%);
+            color: #111827;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            align-items: center;
+            margin-bottom: 18px;
+            color: #fff;
+        }
+        .account, .langbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+        .badge {
+            padding: 8px 10px;
+            border-radius: 8px;
+            background: rgba(255,255,255,0.16);
+            border: 1px solid rgba(255,255,255,0.24);
+        }
+        .quota {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            padding: 8px 12px;
+            border-radius: 8px;
+            background: #ecfeff;
+            color: #155e75;
+            font-weight: 700;
+        }
+        .header { color: #fff; margin-bottom: 24px; }
+        .header h1 { font-size: 2.4rem; margin-bottom: 8px; letter-spacing: 0; }
+        .header p { font-size: 1.05rem; opacity: 0.92; }
+        .main-content {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            gap: 20px;
+        }
+        .card {
+            background: #fff;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 12px 30px rgba(15,23,42,0.22);
+        }
+        .card h2, .card h3 { color: #4338ca; margin-bottom: 14px; }
+        .upload-area {
+            border: 2px dashed #6366f1;
+            border-radius: 8px;
+            padding: 36px;
+            text-align: center;
+            background: #f8fafc;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        .upload-area:hover { background: #eef2ff; border-color: #7c3aed; }
+        .upload-area input { display: none; }
+        .image-container {
+            position: relative;
+            margin: 16px 0;
+            min-height: 260px;
+            text-align: center;
+            overflow: hidden;
+            border-radius: 8px;
+            background: #f3f4f6;
+        }
+        .image-container img { max-width: 100%; height: auto; vertical-align: top; }
+        .btn {
+            border: 0;
+            border-radius: 8px;
+            padding: 10px 16px;
+            margin: 4px;
+            cursor: pointer;
+            color: #fff;
+            background: #4f46e5;
+            font-size: 15px;
+            transition: transform 0.15s, opacity 0.15s;
+        }
+        .btn:hover { transform: translateY(-1px); }
+        .btn:disabled { cursor: not-allowed; opacity: 0.55; transform: none; }
+        .btn-secondary { background: #64748b; }
+        .btn-success { background: #16a34a; }
+        .btn-danger { background: #dc2626; }
+        input, textarea, select {
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            padding: 9px;
+            font: inherit;
+        }
+        textarea { width: 100%; min-height: 110px; font-family: Consolas, monospace; }
+        .controls { margin: 16px 0; }
+        .control-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
+        .region-info, .info {
+            margin: 12px 0;
+            padding: 12px;
+            border-radius: 8px;
+            background: #eff6ff;
+            color: #1e3a8a;
+        }
+        .key-display {
+            margin: 14px 0;
+            padding: 14px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            background: #f9fafb;
+        }
+        .key-display pre {
+            white-space: pre-wrap;
+            word-break: break-all;
+            padding: 10px;
+            border-radius: 6px;
+            background: #e5e7eb;
+            font-size: 12px;
+        }
+        .hint-list { margin-left: 22px; line-height: 1.75; }
+        #overlayCanvas { position: absolute; left: 0; top: 0; pointer-events: none; }
+        @media (max-width: 820px) {
+            body { padding: 12px; }
+            .topbar, .main-content { display: block; }
+            .account, .langbar { margin-bottom: 10px; }
+            .header h1 { font-size: 1.8rem; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="topbar">
+        <div class="account">
+            {% if current_user %}
+                <span class="badge"><span data-i18n="signedIn">已登录</span>: {{ current_user.email }}</span>
+                <span class="quota">
+                    <span data-i18n="quota">可用额度</span>:
+                    <span id="quotaText">{{ quota.remaining }}/{{ quota.limit }}</span>
+                </span>
+                <input id="activateKeyInput" data-i18n-placeholder="activationPlaceholder" placeholder="输入激活码">
+                <button class="btn btn-secondary" id="activateBtn" data-i18n="activate">激活会员</button>
+                <button class="btn btn-danger" onclick="location.href='/logout'" data-i18n="logout">退出</button>
+            {% else %}
+                <button class="btn" onclick="location.href='/login'" data-i18n="loginRegister">登录 / 注册</button>
+                <span class="badge" data-i18n="loginNeeded">登录后可查看和使用额度</span>
+            {% endif %}
+        </div>
+        <div class="langbar">
+            <button class="btn btn-secondary" data-lang="zh">中文</button>
+            <button class="btn btn-secondary" data-lang="en">EN</button>
+            <button class="btn btn-secondary" data-lang="jp">日本語</button>
+        </div>
+    </div>
+
+    <header class="header">
+        <h1 data-i18n="title">PicMix 可逆块级图片打乱</h1>
+        <p data-i18n="subtitle">图片只在内存中处理，服务器只保存还原方案，并生成便于分享的短密钥。</p>
+    </header>
+
+    <main class="main-content">
+        <section class="card">
+            <h2 data-i18n="step1">步骤 1: 上传图片并选择区域</h2>
+            <div class="upload-area" id="uploadArea">
+                <input type="file" id="imageInput" accept="image/*">
+                <p data-i18n="uploadHint">点击或拖拽上传图片</p>
+                <p style="font-size:12px;color:#64748b;margin-top:10px;" data-i18n="uploadFormats">支持 PNG, JPG, JPEG, BMP, GIF, WEBP</p>
+            </div>
+
+            <div id="originalImageContainer" class="image-container" style="display:none;">
+                <img id="originalImage" alt="Original image">
+                <canvas id="overlayCanvas"></canvas>
+            </div>
+
+            <div class="region-info" id="regionInfo" style="display:none;">
+                <strong data-i18n="selectedRegions">已选区域</strong>:
+                <span id="regionCount">0</span>
+                <div id="regionList"></div>
+            </div>
+
+            <div class="controls">
+                <div class="control-row">
+                    <label for="blockSize" data-i18n="blockSize">块大小</label>
+                    <select id="blockSize">
+                        <option value="4">4 px</option>
+                        <option value="8" selected>8 px</option>
+                        <option value="16">16 px</option>
+                        <option value="32">32 px</option>
+                    </select>
+                    <span data-i18n="methodOnly">打乱方式: 块级打乱</span>
+                </div>
+                <button class="btn" id="selectRegionBtn" data-i18n="selectRegion">选择区域</button>
+                <button class="btn btn-secondary" id="clearRegionsBtn" disabled data-i18n="clearRegions">清除选区</button>
+                <button class="btn" id="scrambleBtn" disabled data-i18n="scramble">打乱选中区域</button>
+                <button class="btn btn-secondary" id="uploadNewBtn" data-i18n="uploadNew">上传新图片</button>
+            </div>
+
+            <div id="encryptedResult" style="display:none;">
+                <h3 data-i18n="scrambleResult">打乱结果</h3>
+                <div class="image-container">
+                    <img id="encryptedImage" alt="Scrambled image">
+                </div>
+                <div class="key-display">
+                    <h3 data-i18n="keyTitle">短密钥，请妥善保存</h3>
+                    <pre id="keyJson"></pre>
+                    <button class="btn btn-secondary" onclick="copyKey()" data-i18n="copyKey">复制密钥</button>
+                    <button class="btn btn-success" id="downloadEncryptedBtn" data-i18n="downloadScrambled">下载打乱图片</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2 data-i18n="step2">步骤 2: 使用密钥还原</h2>
+            <div class="info" data-i18n="restoreTip">还原时需要打乱后的 PNG 图片和对应密钥。图片只在本次浏览器会话与接口请求中临时存在。</div>
+            <label for="restoreKey" data-i18n="pasteKey">粘贴密钥</label>
+            <textarea id="restoreKey"></textarea>
+            <button class="btn" id="restoreBtn" data-i18n="restore">还原图片</button>
+
+            <div id="restoredResult" style="display:none;margin-top:20px;">
+                <h3 data-i18n="restoreResult">还原结果</h3>
+                <div class="image-container">
+                    <img id="restoredImage" alt="Restored image">
+                </div>
+                <button class="btn btn-success" id="downloadRestoredBtn" data-i18n="downloadRestored">下载还原图片</button>
+            </div>
+        </section>
+    </main>
+
+    <section class="card" style="margin-top:20px;">
+        <h3 data-i18n="instructionsTitle">使用说明</h3>
+        <ol class="hint-list">
+            <li data-i18n="instruction1">上传图片后，点击“选择区域”，在图片上用两次点击确定矩形选区。</li>
+            <li data-i18n="instruction2">系统仅使用块级打乱，并把每个像素块的原位置和目标位置保存为服务器端还原方案。</li>
+            <li data-i18n="instruction3">短密钥是纯字母数字字符串，可调用服务器中的还原方案把图片按块还原。</li>
+            <li data-i18n="instruction4">图片不会保存到服务器或数据库；请自行下载打乱后的 PNG 图片和短密钥。</li>
+        </ol>
+    </section>
+</div>
+
+<script>
+const I18N = {
+    zh: {
+        pageTitle: 'PicMix - 可逆块级图片打乱',
+        signedIn: '已登录', quota: '可用额度', activationPlaceholder: '输入激活码', activate: '激活会员', logout: '退出',
+        loginRegister: '登录 / 注册', loginNeeded: '登录后可查看和使用额度',
+        title: 'PicMix 可逆块级图片打乱',
+        subtitle: '图片只在内存中处理，服务器只保存还原方案，并生成便于分享的短密钥。',
+        step1: '步骤 1: 上传图片并选择区域', uploadHint: '点击或拖拽上传图片', uploadFormats: '支持 PNG, JPG, JPEG, BMP, GIF, WEBP',
+        selectedRegions: '已选区域', blockSize: '块大小', methodOnly: '打乱方式: 块级打乱',
+        selectRegion: '选择区域', selectingRegion: '正在选择: 再次点击确认，右键取消', clearRegions: '清除选区',
+        scramble: '打乱选中区域', uploadNew: '上传新图片', scrambleResult: '打乱结果',
+        keyTitle: '短密钥，请妥善保存', copyKey: '复制密钥', downloadScrambled: '下载打乱图片',
+        step2: '步骤 2: 使用密钥还原', restoreTip: '还原时需要打乱后的 PNG 图片和对应密钥。图片只在本次浏览器会话与接口请求中临时存在。',
+        pasteKey: '粘贴密钥', restore: '还原图片', restoreResult: '还原结果', downloadRestored: '下载还原图片',
+        instructionsTitle: '使用说明',
+        instruction1: '上传图片后，点击“选择区域”，在图片上用两次点击确定矩形选区。',
+        instruction2: '系统仅使用块级打乱，并把每个像素块的原位置和目标位置保存为服务器端还原方案。',
+        instruction3: '短密钥是纯字母数字字符串，可调用服务器中的还原方案把图片按块还原。',
+        instruction4: '图片不会保存到服务器或数据库；请自行下载打乱后的 PNG 图片和短密钥。',
+        delete: '删除', invalidImage: '请上传图片文件', selectFirst: '请先选择要打乱的区域',
+        missingKey: '请输入密钥', missingScrambled: '请先上传或生成一张打乱后的图片', copied: '密钥已复制到剪贴板',
+        scrambleDone: '打乱完成，这是你的短密钥:', scrambleFailed: '打乱失败: ', restoreFailed: '还原失败: ',
+        activateMissing: '请输入激活码', activateDone: '激活成功', activateFailed: '激活失败: ', unknown: '未知错误'
+    },
+    en: {
+        pageTitle: 'PicMix - Reversible Block Shuffle',
+        signedIn: 'Signed in', quota: 'Quota', activationPlaceholder: 'Activation code', activate: 'Activate Premium', logout: 'Logout',
+        loginRegister: 'Login / Register', loginNeeded: 'Login to view and use quota',
+        title: 'PicMix Reversible Block Shuffle',
+        subtitle: 'Images are processed in memory. The server stores only the restore plan and returns a short shareable key.',
+        step1: 'Step 1: Upload Image and Select Regions', uploadHint: 'Click or drag to upload an image', uploadFormats: 'Supports PNG, JPG, JPEG, BMP, GIF, WEBP',
+        selectedRegions: 'Selected regions', blockSize: 'Block size', methodOnly: 'Shuffle method: block shuffle',
+        selectRegion: 'Select Region', selectingRegion: 'Selecting: click again to confirm, right click to cancel', clearRegions: 'Clear Regions',
+        scramble: 'Shuffle Selected Regions', uploadNew: 'Upload New Image', scrambleResult: 'Shuffle Result',
+        keyTitle: 'Short key, keep it safe', copyKey: 'Copy Key', downloadScrambled: 'Download Shuffled Image',
+        step2: 'Step 2: Restore with Key', restoreTip: 'Restoring needs the shuffled PNG and its key. Images exist only in the browser session and temporary API request.',
+        pasteKey: 'Paste key', restore: 'Restore Image', restoreResult: 'Restore Result', downloadRestored: 'Download Restored Image',
+        instructionsTitle: 'Instructions',
+        instruction1: 'After uploading, click “Select Region”, then click twice on the image to define a rectangle.',
+        instruction2: 'Only block shuffle is used. Each block mapping is stored as a server-side restore plan.',
+        instruction3: 'The short key is alphanumeric and calls the server restore plan to rebuild the image block by block.',
+        instruction4: 'Images are not saved to the server or database. Download the shuffled PNG and short key yourself.',
+        delete: 'Delete', invalidImage: 'Please upload an image file', selectFirst: 'Select at least one region first',
+        missingKey: 'Enter the key', missingScrambled: 'Upload or generate a shuffled image first', copied: 'Key copied to clipboard',
+        scrambleDone: 'Shuffle complete. Your short key is:', scrambleFailed: 'Shuffle failed: ', restoreFailed: 'Restore failed: ',
+        activateMissing: 'Enter activation code', activateDone: 'Activated', activateFailed: 'Activation failed: ', unknown: 'Unknown error'
+    },
+    jp: {
+        pageTitle: 'PicMix - 可逆ブロックシャッフル',
+        signedIn: 'ログイン中', quota: '利用可能枠', activationPlaceholder: '有効化コード', activate: 'プレミアム有効化', logout: 'ログアウト',
+        loginRegister: 'ログイン / 登録', loginNeeded: 'ログインすると利用枠を確認できます',
+        title: 'PicMix 可逆ブロックシャッフル',
+        subtitle: '画像はメモリ内だけで処理します。サーバーには復元プランだけを保存し、共有しやすい短いキーを生成します。',
+        step1: 'ステップ 1: 画像をアップロードして領域を選択', uploadHint: 'クリックまたはドラッグで画像をアップロード', uploadFormats: 'PNG, JPG, JPEG, BMP, GIF, WEBP 対応',
+        selectedRegions: '選択済み領域', blockSize: 'ブロックサイズ', methodOnly: '方式: ブロックシャッフル',
+        selectRegion: '領域を選択', selectingRegion: '選択中: もう一度クリックで確定、右クリックで取消', clearRegions: '選択をクリア',
+        scramble: '選択領域をシャッフル', uploadNew: '新しい画像をアップロード', scrambleResult: 'シャッフル結果',
+        keyTitle: '短いキーを安全に保存してください', copyKey: 'キーをコピー', downloadScrambled: 'シャッフル画像をダウンロード',
+        step2: 'ステップ 2: キーで復元', restoreTip: '復元にはシャッフル後の PNG と対応するキーが必要です。画像はブラウザセッションと一時的な API リクエスト内だけに存在します。',
+        pasteKey: 'キーを貼り付け', restore: '画像を復元', restoreResult: '復元結果', downloadRestored: '復元画像をダウンロード',
+        instructionsTitle: '使い方',
+        instruction1: '画像をアップロードし、「領域を選択」を押して、画像上で二回クリックして矩形を決めます。',
+        instruction2: 'ブロックシャッフルのみを使用し、各ブロックの元位置と移動先をサーバー側の復元プランに保存します。',
+        instruction3: '短いキーは英数字文字列で、サーバーの復元プランを呼び出して画像を復元します。',
+        instruction4: '画像はサーバーやデータベースに保存されません。PNG と短いキーを保存してください。',
+        delete: '削除', invalidImage: '画像ファイルをアップロードしてください', selectFirst: '先に領域を選択してください',
+        missingKey: 'キーを入力してください', missingScrambled: '先にシャッフル画像をアップロードまたは生成してください', copied: 'キーをコピーしました',
+        scrambleDone: 'シャッフル完了。短いキー:', scrambleFailed: 'シャッフル失敗: ', restoreFailed: '復元失敗: ',
+        activateMissing: '有効化コードを入力してください', activateDone: '有効化しました', activateFailed: '有効化失敗: ', unknown: '不明なエラー'
+    }
+};
+
+let lang = localStorage.getItem('picmixLang') || 'zh';
+let currentImage = null;
+let currentScrambledImage = null;
+let currentRestoredImage = null;
+let selectionMode = false;
+let selecting = false;
+let startPoint = null;
+let regions = [];
+let overlayCanvas = null;
+let overlayCtx = null;
+
+const uploadArea = document.getElementById('uploadArea');
+const imageInput = document.getElementById('imageInput');
+
+function t(key) {
+    return (I18N[lang] && I18N[lang][key]) || I18N.zh[key] || key;
+}
+
+function setLang(nextLang) {
+    lang = nextLang;
+    localStorage.setItem('picmixLang', lang);
+    document.documentElement.lang = lang === 'jp' ? 'ja' : lang === 'en' ? 'en' : 'zh-CN';
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        if (el.tagName.toLowerCase() === 'title') document.title = t(key);
+        else el.textContent = t(key);
+    });
+    document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+        el.placeholder = t(el.getAttribute('data-i18n-placeholder'));
+    });
+    updateSelectButtonText();
+    renderRegionList();
+}
+
+function updateQuota(quota) {
+    if (!quota) return;
+    const quotaText = document.getElementById('quotaText');
+    if (quotaText) quotaText.textContent = `${quota.remaining}/${quota.limit}`;
+}
+
+function handleImageUpload(file) {
+    if (!file.type.startsWith('image/')) {
+        alert(t('invalidImage'));
+        return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        currentImage = event.target.result;
+        currentScrambledImage = currentImage;
+        const img = document.getElementById('originalImage');
+        img.src = currentImage;
+        document.getElementById('originalImageContainer').style.display = 'block';
+        uploadArea.style.display = 'none';
+        resetSelections();
+        setupImageSelection(img);
+    };
+    reader.readAsDataURL(file);
+}
+
+uploadArea.addEventListener('click', () => imageInput.click());
+uploadArea.addEventListener('dragover', (event) => {
+    event.preventDefault();
+    uploadArea.style.background = '#eef2ff';
+});
+uploadArea.addEventListener('dragleave', () => uploadArea.style.background = '#f8fafc');
+uploadArea.addEventListener('drop', (event) => {
+    event.preventDefault();
+    uploadArea.style.background = '#f8fafc';
+    if (event.dataTransfer.files[0]) handleImageUpload(event.dataTransfer.files[0]);
+});
+imageInput.addEventListener('change', (event) => {
+    if (event.target.files[0]) handleImageUpload(event.target.files[0]);
+});
+
+function setupImageSelection(img) {
+    overlayCanvas = document.getElementById('overlayCanvas');
+    overlayCtx = overlayCanvas.getContext('2d');
+    img.onload = () => {
+        overlayCanvas.width = img.naturalWidth;
+        overlayCanvas.height = img.naturalHeight;
+        overlayCanvas.style.width = img.clientWidth + 'px';
+        overlayCanvas.style.height = img.clientHeight + 'px';
+        drawAllRegions();
+    };
+}
+
+document.getElementById('originalImage').addEventListener('click', (event) => {
+    if (!selectionMode) return;
+    const img = event.currentTarget;
+    const pos = clientToImageCoords(event, img);
+    if (!selecting) {
+        startPoint = pos;
+        selecting = true;
+        return;
+    }
+    const x = Math.floor(Math.min(startPoint.x, pos.x));
+    const y = Math.floor(Math.min(startPoint.y, pos.y));
+    const w = Math.floor(Math.abs(pos.x - startPoint.x));
+    const h = Math.floor(Math.abs(pos.y - startPoint.y));
+    if (w > 5 && h > 5) {
+        regions.push([x, y, w, h]);
+        document.getElementById('regionInfo').style.display = 'block';
+        document.getElementById('scrambleBtn').disabled = false;
+        document.getElementById('clearRegionsBtn').disabled = false;
+    }
+    selecting = false;
+    startPoint = null;
+    renderRegionList();
+    drawAllRegions();
+});
+
+document.getElementById('originalImage').addEventListener('mousemove', (event) => {
+    if (!selectionMode || !selecting) return;
+    const pos = clientToImageCoords(event, event.currentTarget);
+    drawAllRegions();
+    const x = Math.min(startPoint.x, pos.x);
+    const y = Math.min(startPoint.y, pos.y);
+    const w = Math.abs(pos.x - startPoint.x);
+    const h = Math.abs(pos.y - startPoint.y);
+    overlayCtx.fillStyle = 'rgba(79,70,229,0.14)';
+    overlayCtx.strokeStyle = '#f97316';
+    overlayCtx.lineWidth = 4;
+    overlayCtx.fillRect(x, y, w, h);
+    overlayCtx.strokeRect(x + 0.5, y + 0.5, w, h);
+});
+
+document.getElementById('originalImage').addEventListener('contextmenu', (event) => {
+    if (!selectionMode) return;
+    event.preventDefault();
+    selecting = false;
+    startPoint = null;
+    drawAllRegions();
+});
+
+function clientToImageCoords(event, img) {
+    const rect = img.getBoundingClientRect();
+    return {
+        x: (event.clientX - rect.left) * img.naturalWidth / rect.width,
+        y: (event.clientY - rect.top) * img.naturalHeight / rect.height
+    };
+}
+
+function clearOverlay() {
+    if (overlayCtx) overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+}
+
+function drawAllRegions() {
+    if (!overlayCtx) return;
+    clearOverlay();
+    regions.forEach((region, index) => {
+        const [x, y, w, h] = region;
+        overlayCtx.fillStyle = 'rgba(79,70,229,0.12)';
+        overlayCtx.strokeStyle = '#4f46e5';
+        overlayCtx.lineWidth = 3;
+        overlayCtx.fillRect(x, y, w, h);
+        overlayCtx.strokeRect(x + 0.5, y + 0.5, w, h);
+        overlayCtx.fillStyle = '#fff';
+        overlayCtx.font = '18px sans-serif';
+        overlayCtx.fillText(String(index + 1), x + 6, y + 22);
+    });
+}
+
+function renderRegionList() {
+    const list = document.getElementById('regionList');
+    if (!list) return;
+    list.innerHTML = '';
+    document.getElementById('regionCount').textContent = regions.length;
+    regions.forEach((region, index) => {
+        const row = document.createElement('div');
+        row.style.margin = '8px 0';
+        row.textContent = `#${index + 1}: X:${region[0]} Y:${region[1]} W:${region[2]} H:${region[3]} `;
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-secondary';
+        btn.textContent = t('delete');
+        btn.addEventListener('click', () => {
+            regions.splice(index, 1);
+            if (regions.length === 0) {
+                document.getElementById('regionInfo').style.display = 'none';
+                document.getElementById('scrambleBtn').disabled = true;
+                document.getElementById('clearRegionsBtn').disabled = true;
+            }
+            renderRegionList();
+            drawAllRegions();
+        });
+        row.appendChild(btn);
+        list.appendChild(row);
+    });
+}
+
+function resetSelections() {
+    selectionMode = false;
+    selecting = false;
+    startPoint = null;
+    regions = [];
+    document.getElementById('regionInfo').style.display = 'none';
+    document.getElementById('scrambleBtn').disabled = true;
+    document.getElementById('clearRegionsBtn').disabled = true;
+    renderRegionList();
+    updateSelectButtonText();
+    if (overlayCtx) clearOverlay();
+}
+
+function updateSelectButtonText() {
+    const btn = document.getElementById('selectRegionBtn');
+    btn.textContent = selectionMode ? t('selectingRegion') : t('selectRegion');
+}
+
+document.getElementById('selectRegionBtn').addEventListener('click', () => {
+    selectionMode = !selectionMode;
+    selecting = false;
+    startPoint = null;
+    document.getElementById('originalImage').style.cursor = selectionMode ? 'crosshair' : 'default';
+    updateSelectButtonText();
+    drawAllRegions();
+});
+
+document.getElementById('clearRegionsBtn').addEventListener('click', resetSelections);
+document.getElementById('uploadNewBtn').addEventListener('click', () => {
+    uploadArea.style.display = 'block';
+    document.getElementById('originalImageContainer').style.display = 'none';
+    document.getElementById('encryptedResult').style.display = 'none';
+    document.getElementById('restoredResult').style.display = 'none';
+    currentImage = null;
+    currentScrambledImage = null;
+    currentRestoredImage = null;
+    imageInput.value = '';
+    resetSelections();
+    imageInput.click();
+});
+
+document.getElementById('scrambleBtn').addEventListener('click', () => {
+    if (!regions.length) {
+        alert(t('selectFirst'));
+        return;
+    }
+    fetch('/scramble', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            image: currentImage,
+            regions,
+            block_size: Number(document.getElementById('blockSize').value)
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (!data.success) {
+            alert(t('scrambleFailed') + (data.error || t('unknown')));
+            return;
+        }
+        currentScrambledImage = data.image;
+        document.getElementById('encryptedImage').src = data.image;
+        document.getElementById('encryptedResult').style.display = 'block';
+        document.getElementById('keyJson').textContent = data.key_token;
+        document.getElementById('restoreKey').value = data.key_token;
+        updateQuota(data.quota);
+        alert(t('scrambleDone') + '\n' + data.key_token);
+    });
+});
+
+document.getElementById('restoreBtn').addEventListener('click', () => {
+    const key = document.getElementById('restoreKey').value.trim();
+    if (!key) {
+        alert(t('missingKey'));
+        return;
+    }
+    if (!currentScrambledImage) {
+        alert(t('missingScrambled'));
+        return;
+    }
+    fetch('/unscramble', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ image: currentScrambledImage, key })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (!data.success) {
+            alert(t('restoreFailed') + (data.error || t('unknown')));
+            return;
+        }
+        currentRestoredImage = data.image;
+        document.getElementById('restoredImage').src = data.image;
+        document.getElementById('restoredResult').style.display = 'block';
+    });
+});
+
+function downloadDataUrl(dataUrl, filename) {
+    if (!dataUrl) return;
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+}
+
+document.getElementById('downloadEncryptedBtn').addEventListener('click', () => downloadDataUrl(currentScrambledImage, 'picmix_scrambled.png'));
+document.getElementById('downloadRestoredBtn').addEventListener('click', () => downloadDataUrl(currentRestoredImage, 'picmix_restored.png'));
+
+function copyKey() {
+    navigator.clipboard.writeText(document.getElementById('keyJson').textContent).then(() => alert(t('copied')));
+}
+
+const activateBtn = document.getElementById('activateBtn');
+if (activateBtn) {
+    activateBtn.addEventListener('click', () => {
+        const key = document.getElementById('activateKeyInput').value.trim();
+        if (!key) {
+            alert(t('activateMissing'));
+            return;
+        }
+        fetch('/activate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({key})
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                updateQuota(data.quota);
+                alert(t('activateDone'));
+            } else {
+                alert(t('activateFailed') + (data.error || t('unknown')));
+            }
+        });
+    });
+}
+
+document.querySelectorAll('[data-lang]').forEach(btn => {
+    btn.addEventListener('click', () => setLang(btn.getAttribute('data-lang')));
+});
+setLang(lang);
+</script>
+</body>
+</html>
